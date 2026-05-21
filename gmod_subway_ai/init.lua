@@ -756,6 +756,29 @@ function ENT:Think()
             self.PathID = Metrostroi.AIConfiguration[route].Path
         end
     end
+
+    -- Snap to whatever track the train was actually SPAWNED on. Without this
+    -- the AI just forces PathID = random(1,2) + Position = 100, which on
+    -- depot / branch maps (e.g. crossline_n4a) drops it onto a random short
+    -- siding or off the rails entirely ("spawns in weird places, won't go to
+    -- the track"). GetPositionOnTrack finds the nearest path + offset to the
+    -- spawn point so the train starts exactly where it was placed.
+    -- Retried each tick until it succeeds, since the rail network may not be
+    -- built yet on the very first think (and given up on after ~10 s).
+    if not self.SpawnSnapped and not self.TrainHead and Metrostroi.GetPositionOnTrack then
+        self._SnapTries = (self._SnapTries or 0) + 1
+        local results = Metrostroi.GetPositionOnTrack(self:GetPos(), self:GetAngles(),
+            { z_pad = 384, radius = 600 })
+        local best = results and results[1]
+        if best and best.path and best.path.id then
+            self.PathID       = best.path.id
+            self.Position     = best.x
+            self.Route        = self.Route or "default"
+            self.SpawnSnapped = true
+        elseif self._SnapTries > 600 then
+            self.SpawnSnapped = true   -- give up: spawned nowhere near a track
+        end
+    end
     
     
 	--self:RecvPackedData()
@@ -776,6 +799,16 @@ function ENT:Think()
 	 	-- Select path
     if (not self.PathID) or (not self.Route) then return true end
     local path = Metrostroi.Paths[self.PathID]
+    -- The PathID may point to a path that does not exist on this map, or the
+    -- rail network may not be built yet. Without this guard every downstream
+    -- GetTrackPosition(path, ...) call indexes a nil path and errors.
+    if not path then
+        -- Try to fall back to any valid path so the train can still run.
+        for pid, p in pairs(Metrostroi.Paths or {}) do
+            if p then self.PathID = pid; path = p; break end
+        end
+        if not path then return true end
+    end
     local config = Metrostroi.AIConfiguration[self.Route]
     
     -- If config doesn't exist, skip route switching

@@ -20,7 +20,13 @@ function ENT:GetStandingArea()
 end
 
 function ENT:InitializeSystems()
-	self:LoadSystem("ALS_ARS")
+	-- Load the ARS speed-control system only if this Metrostroi build actually
+	-- registers it. On builds where "ALS_ARS" is absent, LoadSystem would
+	-- ErrorNoHalt ("No system defined: ALS_ARS"); the AI is fully guarded for
+	-- a nil self.ALS_ARS and just drives with default speed limits instead.
+	if Metrostroi.Systems and Metrostroi.Systems["ALS_ARS"] then
+		self:LoadSystem("ALS_ARS")
+	end
 end
 
 --------------------------------------------------------------------------------
