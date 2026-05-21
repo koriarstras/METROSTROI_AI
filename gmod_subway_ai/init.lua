@@ -5,210 +5,179 @@ include("shared.lua")
 --------------------------------------------------------------------------------
 ENT.ClientProps = {}
 
-function ENT:Initialize()
-	-- Defined train information
-	self.SubwayTrain = {
-		Type = "AI",
-		Name = "",
+local SPAWN_LIFT = Vector(0, 0, 140)
+local WAGON_LEN_M = 18
+local SIDE_LIGHT_TEXTURE = "models/metrostroi_signals/signal_sprite_002.vmt"
+local ZERO_ANG = Angle(0, 0, 0)
+
+local function sideLights()
+	return {
+		[14] = { "light", Vector(-50, 68, 54),  ZERO_ANG, Color(255, 0, 0),     brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[15] = { "light", Vector(4, 68, 54),    ZERO_ANG, Color(150, 255, 255), brightness = 0.6, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[16] = { "light", Vector(1, 68, 54),    ZERO_ANG, Color(0, 255, 0),     brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[17] = { "light", Vector(-2, 68, 54),   ZERO_ANG, Color(255, 255, 0),   brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[18] = { "light", Vector(-50, -69, 54), ZERO_ANG, Color(255, 0, 0),     brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[19] = { "light", Vector(5, -69, 54),   ZERO_ANG, Color(150, 255, 255), brightness = 0.6, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[20] = { "light", Vector(2, -69, 54),   ZERO_ANG, Color(0, 255, 0),     brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
+		[21] = { "light", Vector(-1, -69, 54),  ZERO_ANG, Color(255, 255, 0),   brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
 	}
-	if not self.TrainType then self.TrainType = "81-717" end
-	-- Remember exactly where/how the player placed this train (captured
-	-- before the +140 lift below) so the first-think track snap can put it
-	-- on the right path facing the right way.
-	self.SpawnPos   = self:GetPos()
-	self.SpawnAngle = self:GetAngles()
-	-- Set model and initialize
-	self.NoPhysics = true
-	if self.TrainType == "81-717" 
-	then self.MaskType = 10
-    self.LampType = 1
-    self:SetModel("models/metrostroi_train/81-717/81-717_mvm.mdl")
-    self:SetRenderMode(RENDERMODE_TRANSALPHA)
-    self.BaseClass.Initialize(self)
-    self:SetPos(self:GetPos() + Vector(0,0,140)) end
-	if self.TrainType == "81-714" 
-	then self:SetModel("models/metrostroi_train/81-717/81-717_mvm_int.mdl")
-    self.BaseClass.Initialize(self)
-    self:SetPos(self:GetPos() + Vector(0,0,140)) end
-	self.BaseClass.Initialize(self)
+end
 
-	-- Create bogeys
-    if Metrostroi.BogeyOldMap then
-        self.FrontBogey = self:CreateBogey(Vector( 317-5,0,-84),Angle(0,180,0),true,"717")
-        self.RearBogey  = self:CreateBogey(Vector(-317+0,0,-84),Angle(0,0,0),false,"717")
-        self.FrontCouple = self:CreateCouple(Vector( 419.5,0,-62),Angle(0,0,0),true,"717")
-        self.RearCouple  = self:CreateCouple(Vector(-419.5-6.545,0,-62),Angle(0,180,0),false,"717")
-    else
-        self.FrontBogey = self:CreateBogey(Vector( 317-11,0,-80),Angle(0,180,0),true,"717")
-        self.RearBogey  = self:CreateBogey(Vector(-317+0,0,-80),Angle(0,0,0),false,"717")
-        self.RearCouple  = self:CreateCouple(Vector(-421,0,-66),Angle(0,180,0),false,"717")
-        self.FrontCouple = self:CreateCouple(Vector( 410-3,0,-66),Angle(0,0,0),true,"717")
-    end
-
-	-- Seats
-	if self.TrainType == "81-717" then 
-		self.DriverSeat = self:CreateSeat("driver",Vector(417,0,-22.5))
-		 self.DriverSeat:SetColor(Color(0,0,0,0))
-		 self.DriverSeat:SetRenderMode(RENDERMODE_TRANSALPHA)
-		--self.InstructorsSeat = self:CreateSeat("instructor",Vector(410,35,-28))
-		--self.ExtraSeat = self:CreateSeat("instructor",Vector(410,-35,-28))
+function ENT:InitTrainModel()
+	if self.TrainType == "81-717" then
+		self:SetModel("models/metrostroi_train/81-717/81-717_mvm.mdl")
+		self:SetRenderMode(RENDERMODE_TRANSALPHA)
+	elseif self.TrainType == "81-714" then
+		self:SetModel("models/metrostroi_train/81-717/81-717_mvm_int.mdl")
 	end
-	--[[
-	for i=1,1 do --17
-		local pos = Vector(280-(i-1)*30-math.floor((i-1)/5)*80,-47,-32)
-		local p1 = self:CreateSeat("passenger",pos,Angle(0,90,0))
-		pos.y = -pos.y
-		local p2 = self:CreateSeat("passenger",pos,Angle(0,270,0))
-	end]]
+	self.BaseClass.Initialize(self)
+	self:SetPos(self:GetPos() + SPAWN_LIFT)
+end
 
-	-- Setup door positions
+function ENT:InitBogeys()
+	if Metrostroi.BogeyOldMap then
+		self.FrontBogey  = self:CreateBogey(Vector(317 - 5, 0, -84), Angle(0, 180, 0), true, "717")
+		self.RearBogey   = self:CreateBogey(Vector(-317, 0, -84), Angle(0, 0, 0), false, "717")
+		self.FrontCouple = self:CreateCouple(Vector(419.5, 0, -62), Angle(0, 0, 0), true, "717")
+		self.RearCouple  = self:CreateCouple(Vector(-419.5 - 6.545, 0, -62), Angle(0, 180, 0), false, "717")
+	else
+		self.FrontBogey  = self:CreateBogey(Vector(317 - 11, 0, -80), Angle(0, 180, 0), true, "717")
+		self.RearBogey   = self:CreateBogey(Vector(-317, 0, -80), Angle(0, 0, 0), false, "717")
+		self.RearCouple  = self:CreateCouple(Vector(-421, 0, -66), Angle(0, 180, 0), false, "717")
+		self.FrontCouple = self:CreateCouple(Vector(410 - 3, 0, -66), Angle(0, 0, 0), true, "717")
+	end
+end
+
+function ENT:InitDriverSeat()
+	if self.TrainType ~= "81-717" then return end
+	self.DriverSeat = self:CreateSeat("driver", Vector(417, 0, -22.5))
+	self.DriverSeat:SetColor(Color(0, 0, 0, 0))
+	self.DriverSeat:SetRenderMode(RENDERMODE_TRANSALPHA)
+end
+
+function ENT:InitDoorPositions()
 	self.LeftDoorPositions = {}
 	self.RightDoorPositions = {}
-	for i=0,3 do
-		table.insert(self.LeftDoorPositions,Vector(353.0 - 35*0.5 - 231*i,65,-1.8))
-		table.insert(self.RightDoorPositions,Vector(353.0 - 35*0.5 - 231*i,-65,-1.8))
+	for i = 0, 3 do
+		local x = 353.0 - 35 * 0.5 - 231 * i
+		table.insert(self.LeftDoorPositions, Vector(x, 65, -1.8))
+		table.insert(self.RightDoorPositions, Vector(x, -65, -1.8))
 	end
-	
-		-- Find SOME sort of route
-    local route
-    for k,v in pairs(Metrostroi.AIConfiguration or {}) do
-        if not route then route = k end
-    end
+end
 
-    -- Initial setup - use defaults if no config exists
-    if not self.Route then self.Route = route or "default" end
-    if (not self.PathID) then
-        if route and Metrostroi.AIConfiguration and Metrostroi.AIConfiguration[route] then
-            self.PathID = Metrostroi.AIConfiguration[route].Path
-        else
-            self.PathID = math.random(1,2)  -- Default path
-        end
-    end
-
-    self.Position = self.Position or 100
-    self.Velocity = 0
-    self.RheostatPosition = 0
-
-	-- Lights
-	if self.TrainType == "81-717" then 
-		self.Lights = {
-			-- Head
-			[1] = { "headlight",		Vector(465,0,-20), Angle(0,0,0), Color(176,161,132), fov = 100 },
-			[2] = { "glow",				Vector(460, 51,-23), Angle(0,0,0), Color(255,255,255), brightness = 2 },
-			[3] = { "glow",				Vector(460,-51,-23), Angle(0,0,0), Color(255,255,255), brightness = 2 },
-			[4] = { "glow",				Vector(460,-8, 55), Angle(0,0,0), Color(255,255,255), brightness = 0.3 },
-			[5] = { "glow",				Vector(460,-8, 55), Angle(0,0,0), Color(255,255,255), brightness = 0.3 },
-			[6] = { "glow",				Vector(460, 2, 55), Angle(0,0,0), Color(255,255,255), brightness = 0.3 },
-			[7] = { "glow",				Vector(460, 2, 55), Angle(0,0,0), Color(255,255,255), brightness = 0.3 },
-				
-			-- Reverse
-			[8] = { "light",			Vector(458,-45, 55), Angle(0,0,0), Color(255,0,0),     brightness = 10, scale = 1.0 },
-			[9] = { "light",			Vector(458, 45, 55), Angle(0,0,0), Color(255,0,0),     brightness = 10, scale = 1.0 },
-				
-			-- Cabin
-			[10] = { "dynamiclight",	Vector( 420, 0, 35), Angle(0,0,0), Color(255,255,255), brightness = 0.1, distance = 550 },
-				
-			-- Interior
-			[12] = { "dynamiclight",	Vector(   0, 0, 5), Angle(0,0,0), Color(255,255,255), brightness = 3, distance = 400 },
-				
-			-- Side lights
-			[14] = { "light",			Vector(-50, 68, 54), Angle(0,0,0), Color(255,0,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[15] = { "light",			Vector(4,   68, 54), Angle(0,0,0), Color(150,255,255), brightness = 0.6, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[16] = { "light",			Vector(1,   68, 54), Angle(0,0,0), Color(0,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[17] = { "light",			Vector(-2,  68, 54), Angle(0,0,0), Color(255,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-				
-			[18] = { "light",			Vector(-50, -69, 54), Angle(0,0,0), Color(255,0,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[19] = { "light",			Vector(5,   -69, 54), Angle(0,0,0), Color(150,255,255), brightness = 0.6, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[20] = { "light",			Vector(2,   -69, 54), Angle(0,0,0), Color(0,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[21] = { "light",			Vector(-1,  -69, 54), Angle(0,0,0), Color(255,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-		}
-	end
-	if self.TrainType == "81-714" then
-		self.Lights = {
-			-- Interior
-			[12] = { "dynamiclight",	Vector(   0, 0, 5), Angle(0,0,0), Color(255,255,255), brightness = 3, distance = 400 },
-				
-			-- Side lights
-			[14] = { "light",			Vector(-50, 68, 54), Angle(0,0,0), Color(255,0,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[15] = { "light",			Vector(4,   68, 54), Angle(0,0,0), Color(150,255,255), brightness = 0.6, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[16] = { "light",			Vector(1,   68, 54), Angle(0,0,0), Color(0,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[17] = { "light",			Vector(-2,  68, 54), Angle(0,0,0), Color(255,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-				
-			[18] = { "light",			Vector(-50, -69, 54), Angle(0,0,0), Color(255,0,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[19] = { "light",			Vector(5,   -69, 54), Angle(0,0,0), Color(150,255,255), brightness = 0.6, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[20] = { "light",			Vector(2,   -69, 54), Angle(0,0,0), Color(0,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-			[21] = { "light",			Vector(-1,  -69, 54), Angle(0,0,0), Color(255,255,0), brightness = 0.5, scale = 0.10, texture = "models/metrostroi_signals/signal_sprite_002.vmt" },
-		}	
+function ENT:InitRouteDefaults()
+	local route
+	for k in pairs(Metrostroi.AIConfiguration or {}) do
+		if not route then route = k end
 	end
 
-	-- Prop-protection related
-	if CPPI and IsValid(self.Owner) then
-		self:CPPISetOwner(self.Owner)
+	self.Route = self.Route or route or "default"
+	if not self.PathID then
+		local cfg = route and Metrostroi.AIConfiguration and Metrostroi.AIConfiguration[route]
+		self.PathID = cfg and cfg.Path or math.random(1, 2)
 	end
-	-- Spawn a dummy consist (auto-detect wagon count from shortest platform)
-	if (self.TrainType == "81-717") and (not self.TrainHead) then
-		local WAGON_LEN = 18
-		local numWagons = 5
-		local minLength = math.huge
-		for _, stationData in pairs(Metrostroi.Stations or {}) do
-			for _, platformData in pairs(stationData) do
-				if platformData.length and platformData.length > 0 then
-					if platformData.length < minLength then
-						minLength = platformData.length
-					end
-				end
+
+	self.Position = self.Position or 100
+	self.Velocity = 0
+	self.RheostatPosition = 0
+end
+
+function ENT:InitLights()
+	if self.TrainType == "81-717" then
+		local lights = sideLights()
+		lights[1]  = { "headlight", Vector(465, 0, -20), ZERO_ANG, Color(176, 161, 132), fov = 100 }
+		lights[2]  = { "glow", Vector(460, 51, -23), ZERO_ANG, Color(255, 255, 255), brightness = 2 }
+		lights[3]  = { "glow", Vector(460, -51, -23), ZERO_ANG, Color(255, 255, 255), brightness = 2 }
+		lights[4]  = { "glow", Vector(460, -8, 55), ZERO_ANG, Color(255, 255, 255), brightness = 0.3 }
+		lights[5]  = { "glow", Vector(460, -8, 55), ZERO_ANG, Color(255, 255, 255), brightness = 0.3 }
+		lights[6]  = { "glow", Vector(460, 2, 55), ZERO_ANG, Color(255, 255, 255), brightness = 0.3 }
+		lights[7]  = { "glow", Vector(460, 2, 55), ZERO_ANG, Color(255, 255, 255), brightness = 0.3 }
+		lights[8]  = { "light", Vector(458, -45, 55), ZERO_ANG, Color(255, 0, 0), brightness = 10, scale = 1.0 }
+		lights[9]  = { "light", Vector(458, 45, 55), ZERO_ANG, Color(255, 0, 0), brightness = 10, scale = 1.0 }
+		lights[10] = { "dynamiclight", Vector(420, 0, 35), ZERO_ANG, Color(255, 255, 255), brightness = 0.1, distance = 550 }
+		lights[12] = { "dynamiclight", Vector(0, 0, 5), ZERO_ANG, Color(255, 255, 255), brightness = 3, distance = 400 }
+		self.Lights = lights
+	elseif self.TrainType == "81-714" then
+		local lights = sideLights()
+		lights[12] = { "dynamiclight", Vector(0, 0, 5), ZERO_ANG, Color(255, 255, 255), brightness = 3, distance = 400 }
+		self.Lights = lights
+	end
+end
+
+function ENT:SpawnConsist()
+	if self.TrainType ~= "81-717" or self.TrainHead then return end
+
+	local numWagons = 5
+	local minLength = math.huge
+	for _, stationData in pairs(Metrostroi.Stations or {}) do
+		for _, platformData in pairs(stationData) do
+			local len = platformData.length
+			if len and len > 0 and len < minLength then
+				minLength = len
 			end
 		end
-		if minLength ~= math.huge then
-			numWagons = math.floor(minLength / WAGON_LEN)
-			numWagons = math.max(3, math.min(8, numWagons))
-		end
-		self.NumWagons = numWagons
-		print(Format("[AI] Spawning %d-wagon consist (shortest platform: %.1f m)", numWagons, minLength == math.huge and -1 or minLength))
-
-		for i=2,numWagons do
-			local ent = ents.Create("gmod_subway_ai")
-			if i == numWagons
-			then ent.TrainType = "81-717"
-			else ent.TrainType = "81-714"
-			end
-			ent.TrainIndex = i
-			ent.TrainHead = self
-			ent.Owner = self.Owner
-			ent:Spawn()
-			table.insert(self.TrainEntities,ent)
-		end
 	end
-	--self:Remove()
-	-- Type
-	self:SetNW2String("TrainType",self.TrainType)
-	-- Tell the client whether this car is the REAR head of the consist
-	-- (red lights on, headlights off) vs. the FRONT head (vice versa).
-	-- Middle 81-714 cars don't have these props so the flag is harmless.
+	if minLength ~= math.huge then
+		numWagons = math.max(3, math.min(8, math.floor(minLength / WAGON_LEN_M)))
+	end
+
+	self.NumWagons = numWagons
+	print(Format("[AI] Spawning %d-wagon consist (shortest platform: %.1f m)",
+		numWagons, minLength == math.huge and -1 or minLength))
+
+	for i = 2, numWagons do
+		local ent = ents.Create("gmod_subway_ai")
+		ent.TrainType = (i == numWagons) and "81-717" or "81-714"
+		ent.TrainIndex = i
+		ent.TrainHead = self
+		ent.Owner = self.Owner
+		ent:Spawn()
+		table.insert(self.TrainEntities, ent)
+	end
+end
+
+function ENT:SyncNetworkState()
+	self:SetNW2String("TrainType", self.TrainType)
 	self:SetNW2Bool("IsRearCar", self.TrainHead ~= nil)
-
-	-- Start empty — passengers board at stations and alight further down the
-	-- line. The platform's boarding system drives this NW2Float from here on
-	-- via train:BoardPassengers().
 	self:SetNW2Float("PassengerCount", 0)
 
-	-- Network visual configuration to clients.
-	-- MaskType=3 → mask222_mvm (the standard M-logo face shown in the reference image).
-	-- LampType=1 → first lamp variant.
-	-- Texture names match the default 81-717 skins so the prop materials look right.
 	self:SetNW2Int("MaskType", 3)
 	self:SetNW2Int("LampType", 1)
 	self:SetNW2Int("SeatType", 1)
 	self:SetNW2Int("KVType", 1)
 	self:SetNW2Bool("NewBortlamps", true)
-	self:SetNW2String("Texture",    "Def_717MSKBlue")
-	self:SetNW2String("PassTexture","Def_717MSKWhite")
+	self:SetNW2String("Texture", "Def_717MSKBlue")
+	self:SetNW2String("PassTexture", "Def_717MSKWhite")
 	self:SetNW2String("CabTexture", "Def_HammeriteG")
-	-- Headlights packed bools: front head only, rear head off
-	if self.TrainHead == nil and self.TrainType == "81-717" then
+
+	if not self.TrainHead and self.TrainType == "81-717" then
 		self:SetPackedBool("Headlights1", true)
 		self:SetPackedBool("Headlights2", true)
 	end
+end
+
+function ENT:Initialize()
+	self.SubwayTrain = { Type = "AI", Name = "" }
+	self.TrainType = self.TrainType or "81-717"
+
+	-- Capture spawn pose before the vertical lift (used by track snap in Think)
+	self.SpawnPos = self:GetPos()
+	self.SpawnAngle = self:GetAngles()
+	self.NoPhysics = true
+
+	self:InitTrainModel()
+	self:InitBogeys()
+	self:InitDriverSeat()
+	self:InitDoorPositions()
+	self:InitRouteDefaults()
+	self:InitLights()
+
+	if CPPI and IsValid(self.Owner) then
+		self:CPPISetOwner(self.Owner)
+	end
+
+	self:SpawnConsist()
+	self:SyncNetworkState()
 end
 
 --[[concommand.Add("metrostroi_ai_spawn", function(ply, _, args)
@@ -751,182 +720,165 @@ function ENT:DoPhysics(dT)
 	self.MotorPower = motorPower
 end
 
-function ENT:Think()
-	 -- Basic think loop
-    self.PrevTime = self.PrevTime or CurTime()
-    self.DeltaTime = (CurTime() - self.PrevTime)
-    self.PrevTime = CurTime()
-    -- Clamp the timestep. On a server-frame hitch DeltaTime can spike to a
-    -- large value; integrating physics with that makes the train lurch a long
-    -- way in one frame (a visible teleport/stutter). Capping it means a hitch
-    -- just slows the train slightly for that frame instead of jumping it.
-    if self.DeltaTime > 0.1 then self.DeltaTime = 0.1 end
-    if self.DeltaTime < 0  then self.DeltaTime = 0   end
-    
-    -- Initialize route/path on first think if not set
-    if (not self.Route or not self.PathID) and not self.InitializeAttempted then
-        self.InitializeAttempted = true
-        local route
-        for k,v in pairs(Metrostroi.AIConfiguration) do
-            if not route then route = k end
-        end
-        if route and Metrostroi.AIConfiguration[route] then
-            self.Route = route
-            self.PathID = Metrostroi.AIConfiguration[route].Path
-        end
-    end
+function ENT:ThinkUpdateDeltaTime()
+	self.PrevTime = self.PrevTime or CurTime()
+	self.DeltaTime = CurTime() - self.PrevTime
+	self.PrevTime = CurTime()
+	if self.DeltaTime > 0.1 then self.DeltaTime = 0.1 end
+	if self.DeltaTime < 0 then self.DeltaTime = 0 end
+end
 
-    -- Snap to whatever track the train was actually SPAWNED on. Without this
-    -- the AI just forces PathID = random(1,2) + Position = 100, which on
-    -- depot / branch maps (e.g. crossline_n4a) drops it onto a random short
-    -- siding or off the rails entirely ("spawns in weird places, won't go to
-    -- the track"). GetPositionOnTrack finds the nearest path + offset to the
-    -- spawn point so the train starts exactly where it was placed.
-    -- Retried each tick until it succeeds, since the rail network may not be
-    -- built yet on the very first think (and given up on after ~10 s).
-    if not self.SpawnSnapped and not self.TrainHead and Metrostroi.GetPositionOnTrack then
-        self._SnapTries = (self._SnapTries or 0) + 1
-        local results = Metrostroi.GetPositionOnTrack(
-            self.SpawnPos or self:GetPos(), self.SpawnAngle or self:GetAngles(),
-            { z_pad = 384, radius = 600 })
-        local best
-        if results then
-            -- The AI always drives in the +Position direction of its path.
-            -- Pick the CLOSEST result the train is facing ALONG (forward),
-            -- so it heads the way the player pointed it instead of driving
-            -- backwards into the nearest path-end and instantly respawning.
-            for _, r in ipairs(results) do
-                if r.path and r.path.id and r.forward then best = r break end
-            end
-            best = best or results[1]
-        end
-        if best and best.path and best.path.id then
-            self.PathID       = best.path.id
-            self.Position     = best.x
-            self.Route        = self.Route or "default"
-            self.SpawnSnapped = true
-        elseif self._SnapTries > 600 then
-            self.SpawnSnapped = true   -- give up: spawned nowhere near a track
-        end
-    end
-    
-    
-	--self:RecvPackedData()
-	-- Run every tick so position interpolation is smooth (was 0.10 = 10Hz jitter)
-	self:NextThink(CurTime())
+function ENT:ThinkEnsureRoute()
+	if self.Route and self.PathID then return end
+	if self.InitializeAttempted then return end
+	self.InitializeAttempted = true
 
-	local dT = self.DeltaTime
+	local route
+	for k in pairs(Metrostroi.AIConfiguration or {}) do
+		if not route then route = k end
+	end
+	local cfg = route and Metrostroi.AIConfiguration[route]
+	if cfg then
+		self.Route = route
+		self.PathID = cfg.Path
+	end
+end
 
-	-- ALS coil — the ARS frequency pickup. Only the head needs it. Enable it
-	-- once, then tick it at 10 Hz (its own internal Timer self-throttles the
-	-- heavy track query to 1 Hz, so this is cheap).
-	if (not self.TrainHead) and self.ALSCoil then
-		if self.ALSCoil.Enabled == 0 then self.ALSCoil.Enabled = 1 end
-		self.ALSCoil_AccumT = (self.ALSCoil_AccumT or 0) + dT
-		if self.ALSCoil_AccumT >= 0.1 then
-			self.ALSCoil:Think(self.ALSCoil_AccumT)
-			self.ALSCoil_AccumT = 0
+function ENT:ThinkSpawnSnap()
+	if self.SpawnSnapped or self.TrainHead or not Metrostroi.GetPositionOnTrack then return end
+
+	self._SnapTries = (self._SnapTries or 0) + 1
+	local results = Metrostroi.GetPositionOnTrack(
+		self.SpawnPos or self:GetPos(),
+		self.SpawnAngle or self:GetAngles(),
+		{ z_pad = 384, radius = 600 }
+	)
+
+	local best
+	if results then
+		for _, r in ipairs(results) do
+			if r.path and r.path.id and r.forward then
+				best = r
+				break
+			end
 		end
+		best = best or results[1]
 	end
 
-	 	-- Select path
-    if (not self.PathID) or (not self.Route) then return true end
-    local path = Metrostroi.Paths[self.PathID]
-    -- The PathID may point to a path that does not exist on this map, or the
-    -- rail network may not be built yet. Without this guard every downstream
-    -- GetTrackPosition(path, ...) call indexes a nil path and errors.
-    if not path then
-        -- Try to fall back to any valid path so the train can still run.
-        for pid, p in pairs(Metrostroi.Paths or {}) do
-            if p then self.PathID = pid; path = p; break end
-        end
-        if not path then return true end
-    end
-    local config = Metrostroi.AIConfiguration[self.Route]
-    
-    -- If config doesn't exist, skip route switching
-    if config and (self.Position > config.EndPosition) then
-        self.Route = config.NextRoute
-        config = Metrostroi.AIConfiguration[self.Route]
-        if config then
-            self.PathID = config.Path
-            self.Position = config.SpawnPosition
-        end
-        self.Velocity = 0
-        self.Schedule = nil
-        self.NoStation = false
-    elseif not config and path then
-        -- No AIConfiguration: auto-reverse when train reaches the physical end of the track
-        local lastNode = path[#path]
-        if lastNode and self.Position > lastNode.x then
-            -- Spawn far enough into the new path so all wagons fit on track
-            local numWagons = self.NumWagons or 5
-            local consistOffset = numWagons * 18.35 + 30
-            local returnPathID = self:FindReturnPath(self.PathID)
-            if returnPathID and Metrostroi.Paths[returnPathID] then
-                self.PathID = returnPathID
-                local firstNode = Metrostroi.Paths[returnPathID][1]
-                self.Position = (firstNode and firstNode.x or 0) + consistOffset
-            else
-                local firstNode = path[1]
-                self.Position = (firstNode and firstNode.x or 0) + consistOffset
-            end
-            self.Velocity = 0
-            self.OPVStops = nil
-        end
-    end
-	--self.Velocity = 0
+	if best and best.path and best.path.id then
+		self.PathID = best.path.id
+		self.Position = best.x
+		self.Route = self.Route or "default"
+		self.SpawnSnapped = true
+	elseif self._SnapTries > 600 then
+		self.SpawnSnapped = true
+	end
+end
 
-	----------------------------------------------------------------------------
-	-- If needed, update train physics and AI
+function ENT:ThinkUpdateALSCoil(dT)
+	if self.TrainHead or not self.ALSCoil then return end
+	if self.ALSCoil.Enabled == 0 then self.ALSCoil.Enabled = 1 end
+	self.ALSCoil_AccumT = (self.ALSCoil_AccumT or 0) + dT
+	if self.ALSCoil_AccumT >= 0.1 then
+		self.ALSCoil:Think(self.ALSCoil_AccumT)
+		self.ALSCoil_AccumT = 0
+	end
+end
+
+function ENT:ThinkResolvePath()
+	if not self.PathID or not self.Route then return nil end
+	local path = Metrostroi.Paths[self.PathID]
+	if path then return path end
+	for pid, p in pairs(Metrostroi.Paths or {}) do
+		if p then
+			self.PathID = pid
+			return p
+		end
+	end
+	return nil
+end
+
+function ENT:ThinkUpdateRoute(path)
+	local config = Metrostroi.AIConfiguration[self.Route]
+	if config and self.Position > config.EndPosition then
+		self.Route = config.NextRoute
+		config = Metrostroi.AIConfiguration[self.Route]
+		if config then
+			self.PathID = config.Path
+			self.Position = config.SpawnPosition
+		end
+		self.Velocity = 0
+		self.Schedule = nil
+		self.NoStation = false
+		return
+	end
+
+	if config or not path then return end
+	local lastNode = path[#path]
+	if not lastNode or self.Position <= lastNode.x then return end
+
+	local numWagons = self.NumWagons or 5
+	local consistOffset = numWagons * 18.35 + 30
+	local returnPathID = self:FindReturnPath(self.PathID)
+	if returnPathID and Metrostroi.Paths[returnPathID] then
+		self.PathID = returnPathID
+		local firstNode = Metrostroi.Paths[returnPathID][1]
+		self.Position = (firstNode and firstNode.x or 0) + consistOffset
+	else
+		local firstNode = path[1]
+		self.Position = (firstNode and firstNode.x or 0) + consistOffset
+	end
+	self.Velocity = 0
+	self.OPVStops = nil
+end
+
+function ENT:ThinkDriveTrain(dT)
 	if not self.TrainHead then
 		self:DoAI(dT)
 		self:DoPhysics(dT)
-	else
-		if not IsValid(self.TrainHead) then
-			SafeRemoveEntity(self)
-			return
-		end
-
-		self.Route = self.TrainHead.Route
-		self.PathID = self.TrainHead.PathID
-		-- 18.35 m car-to-car spacing, plus a 1 m offset for the whole tail so
-		-- the head(717)→car-2 gap matches the 714↔714 gaps — the cab car sits
-		-- slightly differently and otherwise looks ~1 m too close to car 2.
-		self.Position = self.TrainHead.Position - 18.39*(self.TrainIndex-1) - .13
-		self.Velocity = self.TrainHead.Velocity
-		self.MotorPower = self.TrainHead.MotorPower
-		self.PneumoForce = self.TrainHead.PneumoForce
+		return true
 	end
 
+	if not IsValid(self.TrainHead) then
+		SafeRemoveEntity(self)
+		return false
+	end
 
-	----------------------------------------------------------------------------	
-	-- Lighting
+	self.Route = self.TrainHead.Route
+	self.PathID = self.TrainHead.PathID
+	self.Position = self.TrainHead.Position - 18.39 * (self.TrainIndex - 1) - 0.13
+	self.Velocity = self.TrainHead.Velocity
+	self.MotorPower = self.TrainHead.MotorPower
+	self.PneumoForce = self.TrainHead.PneumoForce
+	return true
+end
+
+function ENT:ThinkUpdateLights()
+	local interiorOn = (CurTime() % 60) > 0.1
 	if self.TrainType == "81-717" then
-		self:SetLightPower(1, self.TrainHead == nil)
-		self:SetLightPower(2, self.TrainHead == nil)
-		self:SetLightPower(3, self.TrainHead == nil)
-		self:SetLightPower(4, self.TrainHead == nil)
-		self:SetLightPower(5, self.TrainHead == nil)
-		self:SetLightPower(6, self.TrainHead == nil)
-		self:SetLightPower(7, self.TrainHead == nil)
-		self:SetLightPower(8, self.TrainHead ~= nil)
-		self:SetLightPower(9, self.TrainHead ~= nil)
-		self:SetLightPower(10, (CurTime() % 60) > 0.1)
-		self:SetLightPower(12, (CurTime() % 60) > 0.1)
+		local isFront = self.TrainHead == nil
+		for i = 1, 7 do self:SetLightPower(i, isFront) end
+		self:SetLightPower(8, not isFront)
+		self:SetLightPower(9, not isFront)
+		self:SetLightPower(10, interiorOn)
+		self:SetLightPower(12, interiorOn)
+	elseif self.TrainType == "81-714" then
+		self:SetLightPower(12, interiorOn)
 	end
-	if self.TrainType == "81-714" then
-		self:SetLightPower(12, (CurTime() % 60) > 0.1)
-	end
-	-- Pneumatic brakes
+end
+
+function ENT:ThinkUpdatePneumatics(dT)
 	self.PneumaticPressure = self.PneumaticPressure or 0
 	self.PneumaticPressure_dPdT = self.PneumaticPressure_dPdT or 0
-	if self.Pneumo 
-	then self.PneumaticPressure_dPdT = 0.65*(1.5 - self.PneumaticPressure)
-	else self.PneumaticPressure_dPdT = 0.65*(0.0 - self.PneumaticPressure)
+	if self.Pneumo then
+		self.PneumaticPressure_dPdT = 0.65 * (1.5 - self.PneumaticPressure)
+	else
+		self.PneumaticPressure_dPdT = 0.65 * (0.0 - self.PneumaticPressure)
 	end
-	self.PneumaticPressure = self.PneumaticPressure + self.PneumaticPressure_dPdT*dT
+	self.PneumaticPressure = self.PneumaticPressure + self.PneumaticPressure_dPdT * dT
+end
 
+function ENT:ThinkUpdateDoors()
 	-- Door state — only open the side facing the platform.
 	-- The head determines the side; followers mirror it. NOTE: follower cars
 	-- are rendered flipped 180° (bodyDir negated in the bogey code), so their
@@ -1001,23 +953,25 @@ function ENT:Think()
 	self:SetPackedBool(26,self.RightDoorsOpen)
 	self:SetPackedBool(27,self.RightDoorsOpen)
 	self:SetPackedBool(28,self.RightDoorsOpen)
-	self:SetPackedBool(52,1)
-	self:SetPackedBool(39,(self.ARSAlert and (not self.TrainHead)) or false)
-	
-	-- Update state of all objects and sounds
-	self.Speed = math.abs(self.Velocity/0.277778)
+	self:SetPackedBool(52, 1)
+	self:SetPackedBool(39, (self.ARSAlert and not self.TrainHead) or false)
+end
+
+function ENT:ThinkSyncBogeys()
+	self.Speed = math.abs(self.Velocity / 0.277778)
 	self.FrontBogey.Speed = self.Speed
 	self.RearBogey.Speed = self.Speed
 	self.FrontBogey.MotorPower = self.MotorPower
 	self.RearBogey.MotorPower = self.MotorPower
 	self.FrontBogey.BrakeCylinderPressure_dPdT = -self.PneumaticPressure_dPdT
 	self.RearBogey.BrakeCylinderPressure_dPdT = -self.PneumaticPressure_dPdT
-	self.FrontBogey.BrakeSqueal = math.min(1,(3*math.abs(self.PneumoForce or 0))^1)
-	self.RearBogey.BrakeSqueal = math.min(1,(3*math.abs(self.PneumoForce or 0))^1)
-	
+	local squeal = math.min(1, (3 * math.abs(self.PneumoForce or 0)) ^ 1)
+	self.FrontBogey.BrakeSqueal = squeal
+	self.RearBogey.BrakeSqueal = squeal
+end
 
-	----------------------------------------------------------------------------
-	-- Update train position — proper bogey articulation.
+function ENT:ThinkUpdateTrackPose(path)
+	-- Bogey articulation: body pose from front/rear truck samples.
 	--
 	-- Each car body sits on TWO bogey trucks. The bogeys independently follow
 	-- the track; the body's position and yaw are derived from the line between
@@ -1031,7 +985,6 @@ function ENT:Think()
 	-- Step 4: each bogey gets its own LOCAL angle so it points along the
 	--         track tangent at ITS own sample — gives the trucks a visible
 	--         yaw twist relative to the body on tight curves.
-	----------------------------------------------------------------------------
 	local METERS_PER_HU = 0.01905
 	local frontBogeyOffM = ((Metrostroi.BogeyOldMap and (317 - 5) or (317 - 11))) * METERS_PER_HU
 	local rearBogeyOffM  = 317 * METERS_PER_HU
@@ -1086,79 +1039,82 @@ function ENT:Think()
 		end
 	end
 
-	-- Signal-aspect check at 2 Hz. A signal halts the train when it is showing
-	-- a stop aspect (.Red) or its block is occupied (.Occupied) — the latter
-	-- is computed by the route logic's IsTrackOccupied(), which detects EVERY
-	-- train on the section (AI bots, player trains, anything). This is proper
-	-- block signalling: the AI stops at the red, and the moment the train
-	-- ahead clears the block the signal opens and the AI proceeds.
+	return node
+end
+
+function ENT:ThinkUpdateSignals(node)
 	self.RestrictionTimeout = self.RestrictionTimeout or 0
-	if (CurTime() - self.RestrictionTimeout) > 0.50 then
-		self.RestrictionTimeout = CurTime()
-		if node and (not self.TrainHead) then
-			local nextARS = Metrostroi.GetARSJoint(node, self.Position, true)
-			local sigX, blocked
-			if nextARS and IsValid(nextARS) then
-				sigX    = (nextARS.TrackPosition and nextARS.TrackPosition.x) or nextARS.ARSOffset
-				blocked = nextARS.Red or nextARS.Occupied
-			end
+	if CurTime() - self.RestrictionTimeout <= 0.50 then return end
+	self.RestrictionTimeout = CurTime()
+	if not node or self.TrainHead then return end
 
-			-- Latched-red logic. The AI commits to ONE red signal at a time:
-			--  • Release the latch once we have rolled past the signal, or
-			--    once it is no longer reporting blocked (the block cleared).
-			--  • Latch a NEW red only if it is far enough ahead (> 12 m) to
-			--    actually brake for. This is the key fix for "train passes a
-			--    light, the light turns red behind it, train brakes": a signal
-			--    that goes red only after we have already reached it is never
-			--    within the 12 m window, so it is never latched or obeyed.
-			if self.ObeyedRedX then
-				if self.Position > self.ObeyedRedX + 4 then
-					-- Definitely rolled past the signal → release.
-					self.ObeyedRedX = nil
-				elseif sigX and math.abs(sigX - self.ObeyedRedX) < 10 and not blocked then
-					-- We got a fresh reading for THAT signal and it is no
-					-- longer blocked → the block cleared → release.
-					self.ObeyedRedX = nil
-				end
-				-- Otherwise (GetARSJoint returned nil, or a different signal)
-				-- keep the latch — never drop a red on an uncertain reading.
-			end
-			if not self.ObeyedRedX and blocked and sigX and sigX > self.Position + 12 then
-				self.ObeyedRedX = sigX
-			end
+	local nextARS = Metrostroi.GetARSJoint(node, self.Position, true)
+	local sigX, blocked
+	if nextARS and IsValid(nextARS) then
+		sigX = (nextARS.TrackPosition and nextARS.TrackPosition.x) or nextARS.ARSOffset
+		blocked = nextARS.Red or nextARS.Occupied
+	end
 
-			self.RedLightDistance = nil
-			if self.ObeyedRedX and ((not self.PlatformEdgeX) or (self.ObeyedRedX < self.PlatformEdgeX)) then
-				local dX = self.ObeyedRedX - self.Position
-				if dX < 400 then self.RedLightDistance = dX end
-			end
+	if self.ObeyedRedX then
+		if self.Position > self.ObeyedRedX + 4 then
+			self.ObeyedRedX = nil
+		elseif sigX and math.abs(sigX - self.ObeyedRedX) < 10 and not blocked then
+			self.ObeyedRedX = nil
 		end
+	end
+	if not self.ObeyedRedX and blocked and sigX and sigX > self.Position + 12 then
+		self.ObeyedRedX = sigX
+	end
 
-		-- Reset any interval clock we're passing. The clock's own train
-		-- sensing relies on a downward trace, which misses the AI body
-		-- (NoPhysics) — so on maps where the clock has no linked signal it
-		-- never counts. Triggering it directly here makes the 1:30 interval
-		-- display work on every map.
-		if not self.TrainHead then
-			for _, clock in pairs(ents.FindByClass("gmod_track_clock_interval")) do
-				if IsValid(clock) and clock.NoInterval ~= 1 and not clock.IntervalReset then
-					if clock:GetPos():Distance(self:GetPos()) < 160 then
-						clock:SetIntervalResetTime(Metrostroi.GetSyncTime()
-							- (GetGlobalFloat("MetrostroiTY") or 0) + Metrostroi.GetTimedT())
-						clock.SensingTime   = Metrostroi.GetSyncTime()
-						clock.IntervalReset = true
-					end
-				end
+	self.RedLightDistance = nil
+	if self.ObeyedRedX and (not self.PlatformEdgeX or self.ObeyedRedX < self.PlatformEdgeX) then
+		local dX = self.ObeyedRedX - self.Position
+		if dX < 400 then self.RedLightDistance = dX end
+	end
+
+	self:ThinkResetIntervalClocks()
+end
+
+function ENT:ThinkResetIntervalClocks()
+	if self.TrainHead then return end
+	for _, clock in pairs(ents.FindByClass("gmod_track_clock_interval")) do
+		if IsValid(clock) and clock.NoInterval ~= 1 and not clock.IntervalReset then
+			if clock:GetPos():Distance(self:GetPos()) < 160 then
+				clock:SetIntervalResetTime(Metrostroi.GetSyncTime()
+					- (GetGlobalFloat("MetrostroiTY") or 0) + Metrostroi.GetTimedT())
+				clock.SensingTime = Metrostroi.GetSyncTime()
+				clock.IntervalReset = true
 			end
 		end
 	end
+end
 
-	-- Train-ahead check EVERY tick (cheap, must react fast at 60+ km/h)
+function ENT:Think()
+	self:ThinkUpdateDeltaTime()
+	self:ThinkEnsureRoute()
+	self:ThinkSpawnSnap()
+	self:NextThink(CurTime())
+
+	local dT = self.DeltaTime
+	self:ThinkUpdateALSCoil(dT)
+
+	local path = self:ThinkResolvePath()
+	if not path then return true end
+
+	self:ThinkUpdateRoute(path)
+	if not self:ThinkDriveTrain(dT) then return end
+
+	self:ThinkUpdateLights()
+	self:ThinkUpdatePneumatics(dT)
+	self:ThinkUpdateDoors()
+	self:ThinkSyncBogeys()
+
+	local node = self:ThinkUpdateTrackPose(path)
+	self:ThinkUpdateSignals(node)
+
 	if not self.TrainHead then
 		self:UpdateTrainAhead()
 	end
 
-
---	self:SendPackedData()
 	return true
 end
