@@ -20,12 +20,13 @@ function ENT:GetStandingArea()
 end
 
 function ENT:InitializeSystems()
-	-- Load the ARS speed-control system only if this Metrostroi build actually
-	-- registers it. On builds where "ALS_ARS" is absent, LoadSystem would
-	-- ErrorNoHalt ("No system defined: ALS_ARS"); the AI is fully guarded for
-	-- a nil self.ALS_ARS and just drives with default speed limits instead.
-	if Metrostroi.Systems and Metrostroi.Systems["ALS_ARS"] then
-		self:LoadSystem("ALS_ARS")
+	-- Use the ALSCoil system — the ARS track-frequency pickup that every
+	-- other Metrostroi train uses. It is present on all builds (unlike the
+	-- old "ALS_ARS" system, which was missing on some). The AI reads its
+	-- F1–F6 frequency codes to derive a speed limit. Guarded anyway so a
+	-- build without it just drives on defaults instead of erroring.
+	if Metrostroi.Systems and Metrostroi.Systems["ALSCoil"] then
+		self:LoadSystem("ALSCoil")
 	end
 end
 

@@ -12,6 +12,11 @@ function ENT:Initialize()
 		Name = "",
 	}
 	if not self.TrainType then self.TrainType = "81-717" end
+	-- Remember exactly where/how the player placed this train (captured
+	-- before the +140 lift below) so the first-think track snap can put it
+	-- on the right path facing the right way.
+	self.SpawnPos   = self:GetPos()
+	self.SpawnAngle = self:GetAngles()
 	-- Set model and initialize
 	self.NoPhysics = true
 	if self.TrainType == "81-717" 
@@ -353,6 +358,25 @@ function ENT:BuildOPVStopList()
 end
 
 --------------------------------------------------------------------------------
+-- Derive an ARS speed limit (km/h) from the ALSCoil's frequency codes.
+-- The coil exposes F1..F6 (ARS frequency flags) — the highest one present
+-- sets the permitted speed. F1 = code 8 = fastest … F5 = code 0 = slowest.
+-- AO is the absolute-stop code. Returns 0 when there is no ARS code at all
+-- (uncovered track or a stop demand); DoAI then applies a cautious crawl.
+--------------------------------------------------------------------------------
+function ENT:GetARSCruiseSpeed()
+	local c = self.ALSCoil
+	if not c then return 0 end
+	if c.AO then return 0 end
+	if (c.F1 or 0) > 0 then return 80 end
+	if (c.F2 or 0) > 0 then return 70 end
+	if (c.F3 or 0) > 0 then return 60 end
+	if (c.F4 or 0) > 0 then return 40 end
+	if (c.F5 or 0) > 0 then return 20 end
+	return 0
+end
+
+--------------------------------------------------------------------------------
 -- Find the station's gmod_track_clock_interval (cached per-stop).
 -- This is the wall clock that resets every time a train passes — we read it to
 -- enforce the 1:30 service interval instead of using a fixed dwell.
@@ -503,14 +527,9 @@ function ENT:DoAI(dT)
 	end
 	self.PlatformEdgeX = platformEdgeX
 
-	-- Get speed limit from ALS_ARS. The system can be absent (failed to load,
-	-- or a Metrostroi build without it) — fall back to safe defaults so the
-	-- AI still drives instead of erroring.
-	local ars = self.ALS_ARS
-	local speedLimit = ars and ars.SpeedLimit or 0
-	local nextLimit  = ars and ars.NextLimit  or 0
-	local targetSpeed = nextLimit
-	if nextLimit == 0 then targetSpeed = speedLimit end
+	-- Speed limit from the ALS coil's ARS frequency codes.
+	local speedLimit  = self:GetARSCruiseSpeed()
+	local targetSpeed = speedLimit
 
 	-- Default approach speed when all limits are zero
 	if targetSpeed == 0 then targetSpeed = 20 end
@@ -662,11 +681,11 @@ function ENT:DoAI(dT)
 	if self.Speed > targetSpeed then self.Braking = true end
 	if (self.Speed < (targetSpeed - 5)) and self.Braking then self.Braking = false end
 
-	-- ARS attention pedal
-	if ars then
-		ars.AttentionPedal = ars.LVD and true or false
-		if speedLimit == 0 then ars.AttentionPedal = true end
-	end
+	-- ARS overspeed alert. The ALSCoil is only a track-frequency pickup — it
+	-- has no LVD/attention-pedal logic — so approximate the alert here:
+	-- raise it when the train exceeds the ARS-permitted speed. Drives the
+	-- warning ringer (packed bool 39).
+	self.ARSAlert = (speedLimit > 0) and (self.Speed > speedLimit + 3) or false
 
 	-- Pneumatic brakes.
 	-- The OLD logic slammed the pneumatic brake on whenever Speed < 7 — this
@@ -767,9 +786,20 @@ function ENT:Think()
     -- built yet on the very first think (and given up on after ~10 s).
     if not self.SpawnSnapped and not self.TrainHead and Metrostroi.GetPositionOnTrack then
         self._SnapTries = (self._SnapTries or 0) + 1
-        local results = Metrostroi.GetPositionOnTrack(self:GetPos(), self:GetAngles(),
+        local results = Metrostroi.GetPositionOnTrack(
+            self.SpawnPos or self:GetPos(), self.SpawnAngle or self:GetAngles(),
             { z_pad = 384, radius = 600 })
-        local best = results and results[1]
+        local best
+        if results then
+            -- The AI always drives in the +Position direction of its path.
+            -- Pick the CLOSEST result the train is facing ALONG (forward),
+            -- so it heads the way the player pointed it instead of driving
+            -- backwards into the nearest path-end and instantly respawning.
+            for _, r in ipairs(results) do
+                if r.path and r.path.id and r.forward then best = r break end
+            end
+            best = best or results[1]
+        end
         if best and best.path and best.path.id then
             self.PathID       = best.path.id
             self.Position     = best.x
@@ -787,12 +817,15 @@ function ENT:Think()
 
 	local dT = self.DeltaTime
 
-	-- Heavy ALS/ARS simulation only at 10 Hz - decisions don't need to be faster
-	if (self.TrainType == "81-717") and (not self.TrainHead) and self.ALS_ARS then
-		self.ALS_ARS_AccumT = (self.ALS_ARS_AccumT or 0) + dT
-		if self.ALS_ARS_AccumT >= 0.1 then
-			self.ALS_ARS:Think(self.ALS_ARS_AccumT, 1)
-			self.ALS_ARS_AccumT = 0
+	-- ALS coil — the ARS frequency pickup. Only the head needs it. Enable it
+	-- once, then tick it at 10 Hz (its own internal Timer self-throttles the
+	-- heavy track query to 1 Hz, so this is cheap).
+	if (not self.TrainHead) and self.ALSCoil then
+		if self.ALSCoil.Enabled == 0 then self.ALSCoil.Enabled = 1 end
+		self.ALSCoil_AccumT = (self.ALSCoil_AccumT or 0) + dT
+		if self.ALSCoil_AccumT >= 0.1 then
+			self.ALSCoil:Think(self.ALSCoil_AccumT)
+			self.ALSCoil_AccumT = 0
 		end
 	end
 
@@ -969,7 +1002,7 @@ function ENT:Think()
 	self:SetPackedBool(27,self.RightDoorsOpen)
 	self:SetPackedBool(28,self.RightDoorsOpen)
 	self:SetPackedBool(52,1)
-	self:SetPackedBool(39,(self.ALS_ARS and self.ALS_ARS.LVD) and (not self.TrainHead) or false)
+	self:SetPackedBool(39,(self.ARSAlert and (not self.TrainHead)) or false)
 	
 	-- Update state of all objects and sounds
 	self.Speed = math.abs(self.Velocity/0.277778)
