@@ -10,7 +10,7 @@ local WAGON_LEN_M = 18
 local SIDE_LIGHT_TEXTURE = "models/metrostroi_signals/signal_sprite_002.vmt"
 local ZERO_ANG = Angle(0, 0, 0)
 
--- standart-scripts: базовый CreateCouple индексирует глобальную bogey (nil).
+-- Костыльный фикс сцепок. Если есть идеи лучше, то передейлай. 
 -- Переопределяем здесь, чтобы не трогать Metrostroi.
 function ENT:CreateCouple(pos, ang, forward, typ)
 	local coupler = ents.Create("gmod_train_couple")
@@ -242,7 +242,7 @@ function ENT:Initialize()
 	self:SyncNetworkState()
 end
 
---[[concommand.Add("metrostroi_ai_spawn", function(ply, _, args)
+concommand.Add("metrostroi_ai_spawn", function(ply, _, args)
 	if (ply:IsValid()) and (not ply:IsAdmin()) then return end
 
 	local pathid = tonumber(args[2]) or 1
@@ -276,7 +276,7 @@ concommand.Add("metrostroi_ai_clear", function(ply, _, args)
 		if args[1] then print("Removed one") return end
 	end
 	--timer.Create("metrostroi-ai-spawntimer",1.0,0,function()end)
-end)]]--
+end)
 
 concommand.Add("metrostroi_ai_info", function(ply, _, args)
 	if (ply:IsValid()) and (not ply:IsAdmin()) then return end
