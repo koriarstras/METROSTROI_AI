@@ -10,6 +10,65 @@ local WAGON_LEN_M = 18
 local SIDE_LIGHT_TEXTURE = "models/metrostroi_signals/signal_sprite_002.vmt"
 local ZERO_ANG = Angle(0, 0, 0)
 
+-- standart-scripts: базовый CreateCouple индексирует глобальную bogey (nil).
+-- Переопределяем здесь, чтобы не трогать Metrostroi.
+function ENT:CreateCouple(pos, ang, forward, typ)
+	local coupler = ents.Create("gmod_train_couple")
+	coupler:SetPos(self:LocalToWorld(pos))
+	coupler:SetAngles(self:GetAngles() + ang)
+	coupler.CoupleType = typ
+	coupler:Spawn()
+
+	if self.GetPlayer and IsValid(self:GetPlayer()) then
+		coupler:SetPlayer(self:GetPlayer())
+	end
+	if CPPI and IsValid(self:CPPIGetOwner()) then
+		coupler:CPPISetOwner(self:CPPIGetOwner())
+	end
+
+	coupler:SetNW2Bool("IsForwardCoupler", forward)
+	coupler:SetNW2Entity("TrainEntity", self)
+	coupler.SpawnPos = pos
+	coupler.SpawnAng = ang
+
+	self.JointPositions = self.JointPositions or {}
+	local index = 1
+	local offset = coupler.CouplingPointOffset or Vector(0, 0, 0)
+	local x = self:WorldToLocal(coupler:LocalToWorld(offset)).x
+	for _, v in ipairs(self.JointPositions) do
+		if v > pos.x then
+			index = index + 1
+		else
+			break
+		end
+	end
+	table.insert(self.JointPositions, index, x)
+
+	if self.NoPhysics then
+		coupler:SetParent(self)
+	else
+		constraint.AdvBallsocket(
+			self, coupler,
+			0, 0,
+			pos, Vector(0, 0, 0),
+			1, 1,
+			-2, -2, -15,
+			2, 2, 15,
+			0.1, 0.1, 1,
+			0, 1
+		)
+		if forward and IsValid(self.FrontBogey) then
+			constraint.NoCollide(self.FrontBogey, coupler, 0, 0)
+		elseif not forward and IsValid(self.RearBogey) then
+			constraint.NoCollide(self.RearBogey, coupler, 0, 0)
+		end
+	end
+
+	self.TrainEntities = self.TrainEntities or {}
+	table.insert(self.TrainEntities, coupler)
+	return coupler
+end
+
 local function sideLights()
 	return {
 		[14] = { "light", Vector(-50, 68, 54),  ZERO_ANG, Color(255, 0, 0),     brightness = 0.5, scale = 0.10, texture = SIDE_LIGHT_TEXTURE },
@@ -35,6 +94,9 @@ function ENT:InitTrainModel()
 end
 
 function ENT:InitBogeys()
+	self.JointPositions = self.JointPositions or {}
+	self.TrainEntities = self.TrainEntities or {}
+
 	if Metrostroi.BogeyOldMap then
 		self.FrontBogey  = self:CreateBogey(Vector(317 - 5, 0, -84), Angle(0, 180, 0), true, "717")
 		self.RearBogey   = self:CreateBogey(Vector(-317, 0, -84), Angle(0, 0, 0), false, "717")
