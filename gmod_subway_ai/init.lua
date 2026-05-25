@@ -221,6 +221,7 @@ end
 function ENT:Initialize()
 	self.SubwayTrain = { Type = "AI", Name = "" }
 	self.TrainType = self.TrainType or "81-717"
+	self:SetNW2String("TrainType", self.TrainType)
 
 	-- Capture spawn pose before the vertical lift (used by track snap in Think)
 	self.SpawnPos = self:GetPos()

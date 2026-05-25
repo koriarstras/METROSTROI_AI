@@ -6,22 +6,59 @@ ENT.AutoAnimNames = {}
 ENT.ClientSounds = {}
 
 function ENT:EnsureClientProps()
-	if self.ClientPropsReady then return end
+	local trainType = self:GetNW2String("TrainType")
+	if trainType == "" then return end
+	if self.ClientPropsReady and self._ClientPropsTrainType == trainType then return end
 	if self:ApplyVisualProps() then
 		self.ClientPropsReady = true
+		self._ClientPropsTrainType = trainType
 	end
 end
 
+-- Провека наличия CL моделей
+function ENT:GetClientPropStats()
+	local expected, valid = 0, 0
+	self.ClientEnts = self.ClientEnts or {}
+
+	for k in pairs(self.ClientProps or {}) do
+		if k == "BaseClass" then continue end
+		expected = expected + 1
+		if IsValid(self.ClientEnts[k]) then
+			valid = valid + 1
+		end
+	end
+
+	return expected, valid
+end
+
+-- Поезд в зоне прорисовки, но CSEnt не созданы
+function ENT:TryRespawnClientPropsWhenVisible()
+	if not self.ShouldRenderClientEnts or not self:ShouldRenderClientEnts() then
+		return
+	end
+
+	self:EnsureClientProps()
+
+	local expected, valid = self:GetClientPropStats()
+	if expected == 0 or valid >= expected then
+		return
+	end
+
+	self.RenderClientEnts = true
+	self.CreatingCSEnts = true
+end
+
 function ENT:Initialize()
-	self.ClientProps = {}
 	self.BaseClass.Initialize(self)
 	self:EnsureClientProps()
 	self:SetNW2VarProxy("TrainType", function()
+		self.ClientPropsReady = false
+		self._ClientPropsTrainType = nil
 		self:EnsureClientProps()
+		self:TryRespawnClientPropsWhenVisible()
 	end)
 end
 
--- Mask + head/red lights for 81-717 (front vs rear of consist)
 local MASK_NAMES = {
 	[1] = "mask22_mvm",
 	[2] = "mask222_mvm_wp",
@@ -53,7 +90,6 @@ function ENT:UpdateHeadVisuals()
 	self:ShowHide("RedLights", isRear)
 end
 
--- Packed bools 21–24 = left (+Y), 25–28 = right (−Y)
 function ENT:UpdatePassengerDoors()
 	for i = 0, 3 do
 		for k = 0, 1 do
@@ -102,6 +138,7 @@ end
 
 function ENT:Think()
 	self:EnsureClientProps()
+	self:TryRespawnClientPropsWhenVisible()
 	self.BaseClass.Think(self)
 
 	self:UpdateHeadVisuals()
@@ -111,7 +148,6 @@ function ENT:Think()
 	self:SetSoundState("bpsn1", self:GetPackedBool(52) and 1 or 0, 1.0)
 end
 
--- Do not clear ClientProps on dormancy — base RemoveCSEnts handles ClientEnts.
 function ENT:OnRemove(temp)
 	self.BaseClass.OnRemove(self, temp)
 end
