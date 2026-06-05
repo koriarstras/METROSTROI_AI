@@ -10,6 +10,17 @@ local WAGON_LEN_M = 18
 local SIDE_LIGHT_TEXTURE = "models/metrostroi_signals/signal_sprite_002.vmt"
 local ZERO_ANG = Angle(0, 0, 0)
 
+-- Station dwell rules (seconds):
+--   AI_INTERVAL_MIN   — service interval: with a working interval clock the
+--                       train departs only once the clock reads >= this.
+--   AI_DWELL_REGULAR  — minimum "regular" stop when the clock already reads
+--                       >= AI_INTERVAL_MIN on arrival (passenger exchange).
+--   AI_DWELL_NOCLOCK  — fixed dwell when no interval clock is present / it has
+--                       no reading.
+local AI_INTERVAL_MIN  = 90
+local AI_DWELL_REGULAR = 12
+local AI_DWELL_NOCLOCK = 30
+
 -- Костыльный фикс сцепок. Если есть идеи лучше, то передейлай. 
 -- Переопределяем здесь, чтобы не трогать Metrostroi.
 function ENT:CreateCouple(pos, ang, forward, typ)
@@ -279,6 +290,38 @@ concommand.Add("metrostroi_ai_clear", function(ply, _, args)
 	--timer.Create("metrostroi-ai-spawntimer",1.0,0,function()end)
 end)
 
+-- Spawn one AI train at every station platform that sits on path 1 or path 2,
+-- i.e. two trains per station (one in each direction). Each train is placed at
+-- the entry (lower-x) end of its platform so it rolls in and performs a normal
+-- station stop. Useful for instantly populating a whole line.
+concommand.Add("metrostroi_ai_spawn_stations", function(ply, _, args)
+	if (ply:IsValid()) and (not ply:IsAdmin()) then return end
+
+	Metrostroi.UpdateStations()
+
+	local spawned = 0
+	for stationIndex, station in pairs(Metrostroi.Stations or {}) do
+		for platformIndex, platform in pairs(station) do
+			local path = platform.node_start and platform.node_start.path
+			local pathid = path and path.id
+			-- Only the two running lines.
+			if pathid ~= 1 and pathid ~= 2 then continue end
+
+			local ent = ents.Create("gmod_subway_ai")
+			if not IsValid(ent) then continue end
+			-- Lower-x end = platform entry in the travel direction; the train
+			-- drives forward from here and stops at the platform's OPV.
+			ent.Position = math.min(platform.x_start or 0, platform.x_end or 0)
+			ent.PathID = pathid
+			ent:Spawn()
+			spawned = spawned + 1
+			print(Format("[AI] Spawned train at station %03d platform %d (path %d, %.0f m)",
+				stationIndex, platformIndex, pathid, ent.Position))
+		end
+	end
+	print(Format("[AI] Spawned %d trains across all station platforms", spawned))
+end)
+
 concommand.Add("metrostroi_ai_info", function(ply, _, args)
 	if (ply:IsValid()) and (not ply:IsAdmin()) then return end
 	for k,v in pairs(ents.FindByClass("gmod_subway_ai")) do
@@ -332,7 +375,7 @@ function ENT:BuildOPVStopList()
 	self.OPVStops = {}
 	self.OPVMinStopPos = nil
 	self.StopTimer = nil
-	self.DepartTimer = nil
+	self.DwellElapsed = nil
 	self.DoorCloseTimer = nil
 
 	local path = Metrostroi.Paths[self.PathID]
@@ -421,12 +464,17 @@ function ENT:FindStationClock()
 	self._CachedClockFor = self.PlatformEdgeX
 	local myPos = self:GetPos()
 	local closest, closestDist = nil, math.huge
-	for _, clock in pairs(ents.FindByClass("gmod_track_clock_interval")) do
-		if not IsValid(clock) then continue end
-		local d = clock:GetPos():Distance(myPos)
-		if d < 600 and d < closestDist then -- platforms are well under 600 u from sign
-			closest = clock
-			closestDist = d
+	-- Two interval-clock entity types exist: the Moscow-style
+	-- gmod_track_clock_interval and the smaller SPb gmod_track_clock_small.
+	-- Both expose GetIntervalResetTime, so accept whichever is nearest.
+	for _, class in ipairs({"gmod_track_clock_interval", "gmod_track_clock_small"}) do
+		for _, clock in pairs(ents.FindByClass(class)) do
+			if not IsValid(clock) then continue end
+			local d = clock:GetPos():Distance(myPos)
+			if d < 900 and d < closestDist then -- modern-line clocks sit farther from the stop than old ones
+				closest = clock
+				closestDist = d
+			end
 		end
 	end
 	self._CachedClock = closest
@@ -566,7 +614,7 @@ function ENT:DoAI(dT)
 	-- Default approach speed when all limits are zero
 	if targetSpeed == 0 then targetSpeed = 20 end
 	-- Slow through speed-40 limit zones
-	if targetSpeed == 40 then targetSpeed = 20 end
+	if targetSpeed == 40 then targetSpeed = 35 end
 
 	-- ---------------- Stuck-at-red-light escape ----------------
 	-- A signal can be stuck red forever (broken route, never-clearing block,
@@ -600,8 +648,10 @@ function ENT:DoAI(dT)
 		stopDist = platformEdgeX - self.Position
 	end
 	if self.RedLightDistance and not ignoreRed then
-		if not stopDist or self.RedLightDistance < stopDist then
-			stopDist = self.RedLightDistance
+		-- Stop 5 m SHORT of the red signal rather than right on top of it.
+		local redStop = self.RedLightDistance - 5
+		if not stopDist or redStop < stopDist then
+			stopDist = redStop
 		end
 	end
 	if self.TrainAheadDistance then
@@ -628,12 +678,12 @@ function ENT:DoAI(dT)
 	end
 
 	-- ---------------- Station dwell (only for OPV stops) ----------------
-	-- StopTimer:   counts down from 10 once the train has fully stopped — doors
-	--              open ~1 s in (handled by the Think door logic).
-	-- DepartTimer: 15 s passenger exchange window after StopTimer ends.
-	-- Total dwell ≈ 25 s. If the station's interval clock already reads
-	-- ≥ 1:30 the train may leave as soon as the passenger window is done,
-	-- but it never WAITS on the clock beyond the 25 s dwell.
+	-- StopTimer:    counts down from 10 once the train has fully stopped — doors
+	--               open ~1 s in (handled by the Think door logic) and stay open
+	--               while StopTimer is non-nil.
+	-- DwellElapsed: total time stopped at the platform; the departure rules
+	--               below compare it against AI_DWELL_REGULAR / AI_DWELL_NOCLOCK.
+	-- Departure timing depends on the interval clock (see departure block).
 	-- Don't run the dwell timer while the doors are in their closing phase.
 	if platformEdgeX then
 		-- Begin the station dwell when the train is stopped within 12 m of the
@@ -646,10 +696,9 @@ function ENT:DoAI(dT)
 		if dX < 12 and self.Speed < 1 and not self.DoorCloseTimer then
 			if not self.StopTimer then self.StopTimer = 10 end
 			self.StopTimer = self.StopTimer - dT
-			if self.StopTimer <= 0 then
-				if not self.DepartTimer then self.DepartTimer = 15 end
-				self.DepartTimer = self.DepartTimer - dT
-			end
+			-- Total time the train has been stopped at the platform. Drives the
+			-- dwell rules below (regular stop / fixed no-clock dwell).
+			self.DwellElapsed = (self.DwellElapsed or 0) + dT
 		end
 	end
 
@@ -661,26 +710,25 @@ function ENT:DoAI(dT)
 	--   Overrunning the stop position always departs immediately.
 	if platformEdgeX then
 		if not self.DoorCloseTimer then
-			-- Phase 1
-			local passengerPhaseDone = self.StopTimer and self.StopTimer <= 0
+			-- Phase 1 — decide when to leave. The passenger phase has begun once
+			-- the train has actually stopped (StopTimer started counting).
+			local dwell = self.DwellElapsed or 0
+			local passengerPhaseStarted = self.StopTimer ~= nil
 			local readyToDepart = false
-			if passengerPhaseDone then
-				-- Departure rule:
-				--   • If a working interval clock is present, it is a STRICT
-				--     gate — the train waits until it reads ≥ 1:30 (90 s) and
-				--     ignores the DepartTimer entirely. No early departures.
-				--   • If there is no clock (GetStationInterval returns nil),
-				--     fall back to the fixed ~25 s dwell (StopTimer 10 +
-				--     DepartTimer 15).
+			if passengerPhaseStarted then
+				-- Departure rules:
+				--   • Working interval clock present: the clock is a STRICT gate.
+				--     - If it reads < 1:30 on arrival, wait until it reaches 90 s,
+				--       THEN depart ("departure after 1:30").
+				--     - If it already reads >= 1:30, just do a regular passenger
+				--       stop of AI_DWELL_REGULAR (~12 s) and go.
+				--     Combined: depart once clock >= 90 s AND we've dwelt >= 12 s.
+				--   • No clock / no reading: fixed AI_DWELL_NOCLOCK (30 s) dwell.
 				local interval = self:GetStationInterval()
 				if interval then
-					if interval >= 90 then
-						readyToDepart = true
-					end
+					readyToDepart = (interval >= AI_INTERVAL_MIN) and (dwell >= AI_DWELL_REGULAR)
 				else
-					if self.DepartTimer and self.DepartTimer <= 0 then
-						readyToDepart = true
-					end
+					readyToDepart = (dwell >= AI_DWELL_NOCLOCK)
 				end
 			end
 			if readyToDepart then
@@ -693,7 +741,7 @@ function ENT:DoAI(dT)
 			if self.DoorCloseTimer <= 0 then
 				self.OPVMinStopPos = platformEdgeX
 				self.DoorCloseTimer = nil
-				self.DepartTimer  = nil
+				self.DwellElapsed = nil
 				self._CachedClock = nil
 			end
 		end
@@ -701,7 +749,7 @@ function ENT:DoAI(dT)
 		if self.Position > platformEdgeX + 5 then
 			self.OPVMinStopPos  = platformEdgeX
 			self.StopTimer      = nil
-			self.DepartTimer    = nil
+			self.DwellElapsed   = nil
 			self.DoorCloseTimer = nil
 			self._CachedClock   = nil
 		end
@@ -1140,13 +1188,28 @@ end
 
 function ENT:ThinkResetIntervalClocks()
 	if self.TrainHead then return end
-	for _, clock in pairs(ents.FindByClass("gmod_track_clock_interval")) do
-		if IsValid(clock) and clock.NoInterval ~= 1 and not clock.IntervalReset then
-			if clock:GetPos():Distance(self:GetPos()) < 160 then
-				clock:SetIntervalResetTime(Metrostroi.GetSyncTime()
-					- (GetGlobalFloat("MetrostroiTY") or 0) + Metrostroi.GetTimedT())
-				clock.SensingTime = Metrostroi.GetSyncTime()
-				clock.IntervalReset = true
+	-- Only reset while the train is actually MOVING past the clock. The AI's
+	-- wagons are clientside props, so the clock's own server-side sensing (down
+	-- traces / signal occupancy) can't see us — we reset the clock manually as
+	-- we drive past it. Gating on speed is essential: if we reset while parked
+	-- at the platform the clock would stay pinned at 0 and the >= 1:30 interval
+	-- gate (see departure block) could never be satisfied. While dwelling
+	-- (Speed ~ 0) we leave the clock alone so it counts up toward 1:30.
+	if (self.Speed or 0) < 5 then return end
+	-- Reset both interval-clock types (Moscow gmod_track_clock_interval and the
+	-- SPb gmod_track_clock_small). Modern-line clocks sit farther from the track
+	-- than the old ~3 m, so use a wider radius (~9.5 m) — still well under the
+	-- spacing between a station's two platform clocks, so we never reset the
+	-- opposite direction's clock.
+	for _, class in ipairs({"gmod_track_clock_interval", "gmod_track_clock_small"}) do
+		for _, clock in pairs(ents.FindByClass(class)) do
+			if IsValid(clock) and clock.NoInterval ~= 1 and not clock.IntervalReset then
+				if clock:GetPos():Distance(self:GetPos()) < 500 then
+					clock:SetIntervalResetTime(Metrostroi.GetSyncTime()
+						- (GetGlobalFloat("MetrostroiTY") or 0) + Metrostroi.GetTimedT())
+					clock.SensingTime = Metrostroi.GetSyncTime()
+					clock.IntervalReset = true
+				end
 			end
 		end
 	end
